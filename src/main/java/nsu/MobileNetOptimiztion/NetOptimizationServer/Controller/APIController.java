@@ -10,6 +10,7 @@ import nsu.MobileNetOptimiztion.NetOptimizationServer.ConnectionInfo;
 import nsu.MobileNetOptimiztion.NetOptimizationServer.DB.ConnectionStatistic;
 import nsu.MobileNetOptimiztion.NetOptimizationServer.DB.ConnectionStatisticDao;
 import nsu.MobileNetOptimiztion.NetOptimizationServer.RequestCoverageNet;
+import nsu.MobileNetOptimiztion.NetOptimizationServer.RequestEntities.CoverageRequestEntity;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,8 +52,7 @@ public class APIController {
     }
 
     @PostMapping(path = "/coverage", consumes = "application/json")
-    String SendCoverageNet(@RequestBody RequestCoverageNet requestCoverageNet) throws JSONException, SQLException {
-        CoverageNet coverageNet = new CoverageNet(requestCoverageNet);
-        return coverageNet.createCoverageNet();
+    String SendCoverageNet(@RequestBody CoverageRequestEntity request) throws JSONException, SQLException {
+        return new CoverageNet(request).createCoverageNet();
     }
 }
