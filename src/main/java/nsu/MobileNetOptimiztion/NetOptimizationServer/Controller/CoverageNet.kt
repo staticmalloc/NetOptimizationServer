@@ -13,6 +13,8 @@ import nsu.MobileNetOptimiztion.NetOptimizationServer.Utils.Location
 import org.json.JSONException
 import java.sql.SQLException
 import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 class CoverageNet(private val netProperties: CoverageRequestEntity) {
     private val dao: Dao<ConnectionStatistic, Long>
@@ -25,23 +27,7 @@ class CoverageNet(private val netProperties: CoverageRequestEntity) {
         val dataList = dao.queryBuilder()
             .where().eq("connection_type", netProperties.connectionType)
             .query()
-        return when (netProperties.connectionType) {
-            "GSM" -> {
-                Gson().toJson(makeGSMNet(dataList))
-            }
-            "CDMA" -> {
-                ""
-            }
-            "LTE" -> {
-                ""
-            }
-            "WCDMA" -> {
-                ""
-            }
-            else -> {
-                ""
-            }
-        }
+        return Gson().toJson(makeNet(dataList, getSSGetter(netProperties.connectionType)))
     }
 
     private fun <T> create2DArray(sizeX: Int, sizeY: Int): ArrayList<ArrayList<T>> {
@@ -79,15 +65,25 @@ class CoverageNet(private val netProperties: CoverageRequestEntity) {
 
     }
 
-    private fun makeGSMNet(dataList: List<ConnectionStatistic>): CoverageNetRequest {
+    private fun getSSGetter(connectionType: String):(statistic: ConnectionStatistic)->Int =
+        when (connectionType){
+            "GSM" -> {a -> getGSMRSSI(a) }
+            //"CDMA" -> { }
+            //"LTE" -> { }
+            "WCDMA" -> {a -> getWCDMASS(a) }
+            else -> {a -> 0}
+        }
+
+    private fun makeNet(dataList: List<ConnectionStatistic>, ssGetter:(statistic: ConnectionStatistic)->Int): CoverageNetRequest {
         val loc00 = Location(netProperties.lat00.toFloat(), netProperties.lon00.toFloat())
         val loc11 = Location(netProperties.lat11.toFloat(), netProperties.lon11.toFloat())
         val geoVec00 = GeoVec(loc00)
         val geoVec01 = GeoVec(Location(loc11.latitude, loc00.longtitude))
         val geoVec10 = GeoVec(Location(loc00.latitude, loc11.longtitude))
 
-        val sizeX = abs((GeoUtils.distanceCartesian(geoVec00, geoVec01) / netProperties.step).toInt())
-        val sizeY = abs((GeoUtils.distanceCartesian(geoVec00, geoVec10) / netProperties.step).toInt())
+        val sizeX = abs((GeoUtils.distanceCartesian(geoVec00, geoVec10) / netProperties.step).toInt())
+        val sizeY = abs((GeoUtils.distanceCartesian(geoVec00, geoVec01) / netProperties.step).toInt())
+        println("${sizeX} ${sizeY}")
         val dLat = (loc11.latitude - loc00.latitude) / sizeY
         val dLong = (loc11.longtitude - loc00.longtitude) / sizeX
 
@@ -99,27 +95,12 @@ class CoverageNet(private val netProperties: CoverageRequestEntity) {
         }.forEach { stat ->
             val curLat = stat.lat.toFloat()
             val curLong = stat.longtitude.toFloat()
-            val rssi = getGSMRSSI(stat)
+            val ss = ssGetter(stat)
             val latId = ((curLat - loc00.latitude) / dLat).toInt()
             val longId = ((curLong - loc00.longtitude) / dLong).toInt()
-            var offset = latId * sizeX + longId
+            val offset = latId * sizeX + longId
             counters[offset]++
-            data[offset] = (data[offset] + rssi)
-            /*if (longId + 1 < arraySize) {
-                offset = latId * arraySize + longId + 1
-                counters[offset]++
-                data[offset] = (data[offset] + rssi) / counters[offset]
-            }
-            if (latId + 1 < arraySize) {
-                offset = (latId + 1) * arraySize + longId
-                counters[offset]++
-                data[offset] = (data[offset] + rssi) / counters[offset]
-            }
-            if (latId + 1 < arraySize && longId + 1 < arraySize) {
-                offset = (latId + 1) * arraySize + longId + 1
-                counters[offset]++
-                data[offset] = (data[offset] + rssi) / counters[offset]
-            }*/
+            data[offset] = (data[offset] + ss)
         }
         for (i in 0 until sizeX * sizeY) {
             if (counters[i] > 0)
@@ -133,6 +114,13 @@ class CoverageNet(private val netProperties: CoverageRequestEntity) {
         var rssiString = statistic.sig_strength.substring(statistic.sig_strength.indexOf("rssi="))
         rssiString = rssiString.substring(rssiString.indexOf("=") + 1, rssiString.indexOf(" "))
         return rssiString.toInt()
+    }
+
+    private fun getWCDMASS(statistic: ConnectionStatistic): Int {
+        if (!statistic.sig_strength.contains("ss=")) return 0
+        var ssString = statistic.sig_strength.substring(statistic.sig_strength.indexOf("ss="))
+        ssString = ssString.substring(ssString.indexOf("=") + 1, ssString.indexOf(" "))
+        return ssString.toInt()
     }
 
     init {
