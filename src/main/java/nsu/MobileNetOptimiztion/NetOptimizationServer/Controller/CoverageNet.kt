@@ -22,20 +22,10 @@ class CoverageNet(private val netProperties: CoverageRequestEntity) {
 
     @Throws(JSONException::class, SQLException::class)
     fun createCoverageNet(): String {
-        var data = IntArray(0)
-        var type = ""
         val dataList = dao.queryBuilder()
             .where().eq("connection_type", netProperties.connectionType)
             .query()
         return Gson().toJson(makeNet(dataList, getSSGetter(netProperties.connectionType)))
-    }
-
-    private fun <T> create2DArray(sizeX: Int, sizeY: Int): ArrayList<ArrayList<T>> {
-        val arrayOfArray = ArrayList<ArrayList<T>>(sizeY)
-        for (i in 0..sizeY - 1) {
-            arrayOfArray[i] = ArrayList(sizeX)
-        }
-        return arrayOfArray
     }
 
     private fun interpolateColumn(net: ArrayList<ArrayList<Location>>, index: Int) {
@@ -65,16 +55,19 @@ class CoverageNet(private val netProperties: CoverageRequestEntity) {
 
     }
 
-    private fun getSSGetter(connectionType: String):(statistic: ConnectionStatistic)->Int =
-        when (connectionType){
-            "GSM" -> {a -> getGSMRSSI(a) }
+    private fun getSSGetter(connectionType: String): (statistic: ConnectionStatistic) -> Int =
+        when (connectionType) {
+            "GSM" -> { a -> getGSMRSSI(a) }
             //"CDMA" -> { }
-            //"LTE" -> { }
-            "WCDMA" -> {a -> getWCDMASS(a) }
-            else -> {a -> 0}
+            "LTE" -> { a -> getLTESS(a) }
+            "WCDMA" -> { a -> getWCDMASS(a) }
+            else -> { a -> 0 }
         }
 
-    private fun makeNet(dataList: List<ConnectionStatistic>, ssGetter:(statistic: ConnectionStatistic)->Int): CoverageNetRequest {
+    private fun makeNet(
+        dataList: List<ConnectionStatistic>,
+        ssGetter: (statistic: ConnectionStatistic) -> Int
+    ): CoverageNetRequest {
         val loc00 = Location(netProperties.lat00.toFloat(), netProperties.lon00.toFloat())
         val loc11 = Location(netProperties.lat11.toFloat(), netProperties.lon11.toFloat())
         val geoVec00 = GeoVec(loc00)
@@ -109,18 +102,24 @@ class CoverageNet(private val netProperties: CoverageRequestEntity) {
         return CoverageNetRequest(sizeX, sizeY, data, "rssi")
     }
 
+
+    private fun substringValue(ss: String, name: String): Int {
+        if (!ss.contains(name)) return 0
+        var temp = ss.substring(ss.indexOf("$name="))
+        temp = temp.let { it.substring(it.indexOf("=") + 1, it.indexOf(" ")) }
+        return temp.toInt()
+    }
+
     private fun getGSMRSSI(statistic: ConnectionStatistic): Int {
-        if (!statistic.sig_strength.contains("rssi=")) return 0
-        var rssiString = statistic.sig_strength.substring(statistic.sig_strength.indexOf("rssi="))
-        rssiString = rssiString.substring(rssiString.indexOf("=") + 1, rssiString.indexOf(" "))
-        return rssiString.toInt()
+        return substringValue(statistic.sig_strength, "rssi")
     }
 
     private fun getWCDMASS(statistic: ConnectionStatistic): Int {
-        if (!statistic.sig_strength.contains("ss=")) return 0
-        var ssString = statistic.sig_strength.substring(statistic.sig_strength.indexOf("ss="))
-        ssString = ssString.substring(ssString.indexOf("=") + 1, ssString.indexOf(" "))
-        return ssString.toInt()
+        return substringValue(statistic.sig_strength, "ss")
+    }
+
+    private fun getLTESS(statistic: ConnectionStatistic): Int {
+        return substringValue(statistic.sig_strength, "rsrp")
     }
 
     init {
